@@ -1,0 +1,328 @@
+\documentclass[12pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+}
+
+\title{Practical Work 1: TCP File Transfer}
+\author{Pham Hoang Viet\\ID: 23BI14452}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+
+The goal of this practical work is to implement a 1--1 file transfer over
+TCP/IP using a Command Line Interface (CLI).  
+The system is composed of:
+\begin{itemize}
+    \item one TCP server,
+    \item one TCP client,
+    \item communication over IPv4 sockets on localhost.
+\end{itemize}
+
+The implementation language is C, compiled and executed on Kali Linux
+with \texttt{gcc}.
+
+\section{Protocol Design}
+
+The protocol is intentionally simple. The client and server use a fixed
+TCP port (8080) and a fixed IP address (127.0.0.1). No application-level
+headers are sent:
+
+\begin{itemize}
+    \item the client opens file \texttt{example\_file.txt} and sends its
+          content as a byte stream;
+    \item the server receives bytes on the socket and writes them to
+          \texttt{received\_file.txt};
+    \item the end of file transfer is detected when the client closes
+          the connection and the server's \texttt{recv()} returns~0.
+\end{itemize}
+
+Figure~\ref{fig:flow} describes the client--server interaction from
+socket creation to file transfer completion.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.65\textwidth]{resource/1.png}
+  \caption{Client--server TCP file transfer flow (socket, connect,
+  write/read, close).}
+  \label{fig:flow}
+\end{figure}
+
+At a higher level, the communication can be viewed as the client
+connecting to the server through the network, sending the file, and
+closing the connection (Figure~\ref{fig:arch-simple}).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.7\textwidth]{resource/2.png}
+  \caption{High-level architecture: Client--Network--Server.}
+  \label{fig:arch-simple}
+\end{figure}
+
+\section{System Organization}
+
+The system is organized into two programs: \texttt{server} and
+\texttt{client}. Both run in the same directory
+\texttt{/home/kali/Documents/Practical Work/Practical Work 1}.
+
+\subsection*{Server}
+
+The server performs the following steps:
+\begin{enumerate}
+    \item create a TCP socket (\texttt{socket()});
+    \item bind the socket to IP 127.0.0.1 and port 8080 (\texttt{bind()});
+    \item listen for incoming connections (\texttt{listen()});
+    \item accept a single connection (\texttt{accept()});
+    \item receive file data using \texttt{recv()} and write it to
+          \texttt{received\_file.txt};
+    \item close the connection.
+\end{enumerate}
+
+\subsection*{Client}
+
+The client performs these steps:
+\begin{enumerate}
+    \item create a TCP socket;
+    \item connect to 127.0.0.1:8080 (\texttt{connect()});
+    \item open \texttt{example\_file.txt} in read mode;
+    \item send file content to the server using \texttt{send()};
+    \item close the socket when finished.
+\end{enumerate}
+
+\section{Implementation Details}
+
+\subsection{Server Code (C)}
+
+\begin{lstlisting}[language=C,caption={Server program (server.c).}]
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
+#define SIZE 1024
+
+void write_file(int sockfd) {
+    int n;
+    FILE *fp;
+    char *filename = "received_file.txt";
+    char buffer[SIZE];
+
+    fp = fopen(filename, "w");
+    if (fp == NULL) {
+        perror("Error in creating file.");
+        exit(1);
+    }
+    while (1) {
+        n = recv(sockfd, buffer, SIZE, 0);
+        if (n <= 0) {
+            break;
+        }
+        fprintf(fp, "%s", buffer);
+        bzero(buffer, SIZE);
+    }
+    fclose(fp);
+}
+
+int main() {
+    char *ip = "127.0.0.1";
+    int port = 8080;
+    int e;
+
+    int sockfd, new_sock;
+    struct sockaddr_in server_addr, new_addr;
+    socklen_t addr_size;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error in socket");
+        exit(1);
+    }
+    printf("Server socket created.\n");
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = port;
+    server_addr.sin_addr.s_addr = inet_addr(ip);
+
+    e = bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if (e < 0) {
+        perror("Error in binding");
+        exit(1);
+    }
+    printf("Binding successfully.\n");
+
+    if (listen(sockfd, 10) == 0) {
+        printf("Listening...\n");
+    } else {
+        perror("Error in listening");
+        exit(1);
+    }
+
+    addr_size = sizeof(new_addr);
+    new_sock = accept(sockfd, (struct sockaddr *)&new_addr, &addr_size);
+
+    write_file(new_sock);
+    printf("Data written in the text file.\n");
+
+    close(new_sock);
+    close(sockfd);
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{Client Code (C)}
+
+\begin{lstlisting}[language=C,caption={Client program (client.c).}]
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <arpa/inet.h>
+
+#define SIZE 1024
+
+void send_file(FILE *fp, int sockfd) {
+    char data[SIZE] = {0};
+
+    while (fgets(data, SIZE, fp) != NULL) {
+        if (send(sockfd, data, sizeof(data), 0) == -1) {
+            perror("Error in sending data");
+            exit(1);
+        }
+        bzero(data, SIZE);
+    }
+}
+
+int main() {
+    char *ip = "127.0.0.1";
+    int port = 8080;
+    int e;
+
+    int sockfd;
+    struct sockaddr_in server_addr;
+    FILE *fp;
+    char *filename = "example_file.txt";
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error in socket");
+        exit(1);
+    }
+    printf("Server socket created.\n");
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = port;
+    server_addr.sin_addr.s_addr = inet_addr(ip);
+
+    e = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if (e == -1) {
+        perror("Error in connecting");
+        exit(1);
+    }
+    printf("Connected to server.\n");
+
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+        perror("Error in reading file.");
+        exit(1);
+    }
+
+    send_file(fp, sockfd);
+    printf("File data sent successfully.\n");
+
+    close(sockfd);
+    printf("Disconnected from the server.\n");
+    return 0;
+}
+\end{lstlisting}
+
+\section{Execution and Testing}
+
+All experiments are run on Kali Linux. The source files are compiled
+with \texttt{gcc} and the input file is created using the shell:
+
+\begin{lstlisting}[language=bash]
+gcc server.c -o server
+gcc client.c -o client
+echo "Hello from client" > example_file.txt
+\end{lstlisting}
+
+Figure~\ref{fig:compile-run} shows the compilation commands and the
+creation of \texttt{example\_file.txt}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.75\textwidth]{resource/6.png}
+  \caption{Compiling the C programs and creating the input file.}
+  \label{fig:compile-run}
+\end{figure}
+
+The server is started in one terminal and the client in another
+(Figure~\ref{fig:terminals}). The log messages confirm that the
+connection is established and that the file is sent and written
+successfully.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{resource/3.png}
+  \caption{Server and client running in two terminals on Kali Linux.}
+  \label{fig:terminals}
+\end{figure}
+
+The working directory after execution contains the compiled binaries and
+both text files (\texttt{example\_file.txt} and
+\texttt{received\_file.txt}), as shown in
+Figure~\ref{fig:thunar}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.6\textwidth]{resource/4.png}
+  \caption{Files in the project directory after a successful transfer.}
+  \label{fig:thunar}
+\end{figure}
+
+Figure~\ref{fig:example} shows the content of \texttt{example\_file.txt}
+on the client side.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.6\textwidth]{resource/5.png}
+  \caption{Content of \texttt{example\_file.txt} (client side).}
+  \label{fig:example}
+\end{figure}
+
+Finally, Figure~\ref{fig:route} shows the network configuration
+(\texttt{ip r}) confirming that both processes run on the same host.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\textwidth]{resource/7.png}
+  \caption{IP routing table on Kali Linux used during testing.}
+  \label{fig:route}
+\end{figure}
+
+\section{Conclusion}
+
+In this practical work, a minimal but functional TCP file transfer
+system was implemented in C on Kali Linux. The client and server
+programs use the standard BSD socket API to establish a connection over
+127.0.0.1:8080 and transfer a text file from client to server.
+
+The tests show that the design and implementation correctly achieve the
+goal of one-to-one file transfer over TCP/IP. Possible extensions
+include adding support for variable filenames, binary files, error
+codes, and multi-client handling.
+
+\end{document}
