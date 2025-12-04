@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.15)
+project(RpcFileTransfer)
+
+# Find Protobuf installation
+find_package(Protobuf REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+
+# Proto file generation
+set(PROTO_SRC "filetransfer.proto")
+set(PROTO_HEADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/filetransfer.pb.h")
+set(PROTO_SRC_OUT "${CMAKE_CURRENT_BINARY_DIR}/filetransfer.pb.cc")
+set(GRPC_HEADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/filetransfer.grpc.pb.h")
+set(GRPC_SRC_OUT "${CMAKE_CURRENT_BINARY_DIR}/filetransfer.grpc.pb.cc")
+
+add_custom_command(
+  OUTPUT "${PROTO_SRC_OUT}" "${PROTO_HEADER_OUT}" "${GRPC_SRC_OUT}" "${GRPC_HEADER_OUT}"
+  COMMAND protoc
+    --grpc_out="${CMAKE_CURRENT_BINARY_DIR}"
+    --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+    -I "${CMAKE_CURRENT_SOURCE_DIR}"
+    --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+    "${CMAKE_CURRENT_SOURCE_DIR}/${PROTO_SRC}"
+  DEPENDS "${PROTO_SRC}"
+)
+
+# Define the library for the generated proto code
+add_library(hw_grpc_proto
+  ${PROTO_SRC_OUT}
+  ${GRPC_SRC_OUT}
+  ${PROTO_HEADER_OUT}
+  ${GRPC_HEADER_OUT}
+)
+target_link_libraries(hw_grpc_proto gRPC::grpc++ protobuf::libprotobuf)
+target_include_directories(hw_grpc_proto PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Build Server
+add_executable(server server.cc)
+target_link_libraries(server hw_grpc_proto gRPC::grpc++ gRPC::grpc++_reflection)
+
+# Build Client
+add_executable(client client.cc)
+target_link_libraries(client hw_grpc_proto gRPC::grpc++ gRPC::grpc++_reflection)

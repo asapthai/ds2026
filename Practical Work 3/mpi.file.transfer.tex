@@ -1,0 +1,96 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{geometry}
+\usepackage{tikz}
+\lstset{style=mystyle}
+\title{\textbf{Practical Work 3: MPI File Transfer}}
+\author{VuXuanThai \\\\Student ID:23BI14397}
+\date{\today}
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+The goal of this practical work is to upgrade the file transfer system to use the Message Passing Interface (MPI). MPI allows us to perform high-performance parallel communication, abstracting the network details into "Messages" and "Ranks" rather than sockets and ports.
+
+\section{Choice of MPI Implementation}
+I chose **OpenMPI** for this implementation. 
+\begin{itemize}
+    \item \textbf{Standard Compliance:} It fully supports the MPI-3 standard.
+    \item \textbf{Availability:} It is the default MPI implementation in standard Linux repositories (installable via \texttt{apt install openmpi-bin}).
+    \item \textbf{Performance:} It provides optimized communication channels (Shared Memory for local processes, TCP for network processes) automatically.
+\end{itemize}
+
+\section{Service Design}
+The service follows a Producer-Consumer pattern. Rank 0 produces data (reads from disk) and Rank 1 consumes data (writes to disk). To handle the file transfer, I designed a protocol using **MPI Tags** to distinguish between metadata and content.
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[node distance=2cm, auto, thick]
+        % Nodes
+        \node (sender) [rectangle, draw, minimum size=1cm] {Rank 0 (Sender)};
+        \node (receiver) [rectangle, draw, minimum size=1cm, right=5cm of sender] {Rank 1 (Receiver)};
+        
+        % Arrows
+        \draw[->] ([yshift=0.5cm]sender.east) -- node [above] {Tag 1: Filename} ([yshift=0.5cm]receiver.west);
+        \draw[->] (sender.east) -- node [above] {Tag 2: Data Chunk 1} (receiver.west);
+        \draw[->] ([yshift=-0.5cm]sender.east) -- node [above] {Tag 2: Data Chunk ...} ([yshift=-0.5cm]receiver.west);
+        \draw[->] ([yshift=-1cm]sender.east) -- node [above] {Tag 3: END Signal} ([yshift=-1cm]receiver.west);
+    \end{tikzpicture}
+    \caption{Protocol Design: Using Tags to separate Control and Data flow.}
+\end{figure}
+
+
+
+\section{System Organization}
+The system is implemented as a single executable file (\texttt{SPMD} - Single Program, Multiple Data). The logical separation of duties is handled at runtime by checking the process \texttt{Rank}.
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[node distance=1.5cm]
+        \node (start) [rectangle, rounded corners, draw] {Start Program};
+        \node (init) [rectangle, draw, below of=start] {MPI\_Init()};
+        \node (check) [diamond, draw, aspect=2, below of=init, yshift=-0.5cm] {Rank == 0?};
+        
+        \node (sender) [rectangle, draw, left=1cm of check, yshift=-1.5cm] {Run Sender Logic};
+        \node (receiver) [rectangle, draw, right=1cm of check, yshift=-1.5cm] {Run Receiver Logic};
+        
+        \node (finalize) [rectangle, draw, below of=check, yshift=-3cm] {MPI\_Finalize()};
+        
+        \draw[->] (start) -- (init);
+        \draw[->] (init) -- (check);
+        \draw[->] (check.west) -| node[above, xshift=-0.5cm] {Yes} (sender.north);
+        \draw[->] (check.east) -| node[above, xshift=0.5cm] {No} (receiver.north);
+        \draw[->] (sender.south) |- (finalize.north);
+        \draw[->] (receiver.south) |- (finalize.north);
+    \end{tikzpicture}
+    \caption{System Organization Flowchart}
+\end{figure}
+
+\section{Implementation Details}
+The file transfer is implemented by reading the file in 4KB chunks. This prevents high memory consumption for large files.
+
+\begin{lstlisting}[language=C, caption=Sender Implementation Code]
+// Rank 0 Logic
+while ((bytes_read = fread(buffer, 1, CHUNK_SIZE, f)) > 0) {
+    MPI_Send(buffer, bytes_read, MPI_BYTE, 1, TAG_CONTENT, MPI_COMM_WORLD);
+}
+// Signal End
+MPI_Send(buffer, 0, MPI_BYTE, 1, TAG_END, MPI_COMM_WORLD);
+\end{lstlisting}
+
+\begin{lstlisting}[language=C, caption=Receiver Implementation Code]
+// Rank 1 Logic
+while (1) {
+    MPI_Recv(buffer, CHUNK_SIZE, MPI_BYTE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+    if (status.MPI_TAG == TAG_END) break;
+    
+    int count;
+    MPI_Get_count(&status, MPI_BYTE, &count);
+    fwrite(buffer, 1, count, f);
+}
+\end{lstlisting}
+
+\end{document}

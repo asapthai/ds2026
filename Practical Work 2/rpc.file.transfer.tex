@@ -1,0 +1,59 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{geometry}
+\geometry{margin=1in}
+\lstset{style=mystyle}
+\title{\textbf{Practical Work 2: RPC File Transfer}}
+\author{Vu Xuan Thai \\\\Student ID:23BI14397}
+\date{\today}
+\begin{document}
+\maketitle
+\section{Introduction}
+The objective of this practical work is to upgrade an existing TCP file transfer system to use Remote Procedure Calls (RPC). This abstraction allows the client to invoke functions on the server as if they were local, hiding the complexities of socket communication.
+\section{Choice of RPC Implementation}
+I chose gRPC (Google Remote Procedure Call) with C++ for this implementation.
+\subsection{Why gRPC?}
+\begin{itemize}
+    \item \textbf{Streaming Support:} gRPC natively supports client-side streaming, which is essential for uploading large files without loading the entire file into memory.
+    \item \textbf{Strong Typing:} Using Protocol Buffers (\texttt{.proto}) ensures that the data structure is strictly defined and consistent between client and server.
+    \item \textbf{Performance:} gRPC uses HTTP/2 and binary serialization (Protobuf), making it more efficient than text-based protocols like XML-RPC or JSON-RPC.
+\end{itemize}
+\section{Protocol Design}
+The communication contract is defined in \texttt{filetransfer.proto}.
+\subsection{Service Definition}
+We define a single RPC method \texttt{UploadFile} that accepts a stream of requests and returns a single status.
+\begin{lstlisting}[language=C++]
+service FileTransferService {
+  rpc UploadFile (stream UploadRequest) returns (UploadStatus) {}
+}
+\end{lstlisting}
+\subsection{Message Structure}
+To handle the file transfer logically, I utilized the \texttt{oneof} feature in Protocol Buffers. This allows the client to send different types of data in the same stream:
+\begin{enumerate}
+    \item \textbf{Metadata:} The first message contains the \texttt{FileInfo} (filename).
+    \item \textbf{Content:} Subsequent messages contain \texttt{chunk\_data} (binary bytes).
+\end{enumerate}
+\begin{lstlisting}[language=C++]
+message UploadRequest {
+  oneof data {
+    FileInfo info = 1;
+    bytes chunk_data = 2;
+  }
+}
+\end{lstlisting}
+\section{System Organization}
+\subsection{Server Implementation}
+The server implements the \texttt{FileTransferService} class. It uses a \texttt{ServerReader} to read the incoming stream. It detects if the incoming message is metadata (to open the file) or content (to write to the file).
+\subsection{Client Implementation}
+The client creates a stub connected to the server. It performs the following steps:
+\begin{enumerate}
+    \item Opens the \texttt{UploadFile} stream.
+    \item Sends the filename wrapped in an \texttt{UploadRequest}.
+    \item Reads the local file in 1MB chunks and streams them to the server.
+    \item Closes the stream and waits for the server's acknowledgement.
+\end{enumerate}
+\section{Conclusion}
+The migration from raw TCP sockets to gRPC significantly simplified the application logic. The complex packet handling (calculating sizes, handling boundaries) is now managed by the gRPC library, allowing us to focus on the file logic itself.
+\end{document}

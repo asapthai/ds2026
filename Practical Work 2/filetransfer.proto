@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package filetransfer;
+
+service FileTransferService {
+  // Client streams file chunks to the server.
+  // We use a stream to handle large files efficiently.
+  rpc UploadFile (stream UploadRequest) returns (UploadStatus) {}
+}
+
+message UploadRequest {
+  oneof data {
+    FileInfo info = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message FileInfo {
+  string filename = 1;
+  uint64 filesize = 2; // Optional: good for progress bars
+}
+
+message UploadStatus {
+  bool success = 1;
+  string message = 2;
+  int32 bytes_received = 3;
+}
