@@ -11,4 +11,4 @@ Student Info
 
 * Student Name: Vu Xuan Thai
 * Student ID: 23BI14397
-* Student Group ID: Not-for-now
+* Student Group ID: 2
