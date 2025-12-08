@@ -1,0 +1,24 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\title{Practical Work 4: Word Count}
+\author{Name: Vu Xuan Thai \\ ID: 23BI14397}
+\date{\today}
+\begin{document}
+\maketitle
+\section{Introduction}
+This report describes the implementation of the Word Count algorithm using a custom C++ MapReduce framework. The goal is to count the frequency of each word in a dataset by utilizing the Map and Reduce programming model.
+\section{Implementation Choice}
+We implemented the framework in C++ because it offers low-level control over memory and data structures. Since there is no standard MapReduce library for C++, we created a ``MapReduce'' base class that handles the core workflow: Mapping, Shuffling (Sorting), and Reducing.
+\section{Architecture}
+\subsection{The Map Phase}
+The \texttt{Map} function takes a line of text as input. It uses a string stream to split the line into individual words. For every word found, it emits a key-value pair: \texttt{<word, 1>}.
+\subsection{The Shuffle Phase}
+After mapping, the framework sorts all intermediate pairs alphabetically by key. This groups identical words together (e.g., all ``apple'' keys sit next to each other).
+\subsection{The Reduce Phase}
+The \texttt{Reduce} function receives a word and a list of counts (e.g., \texttt{<"apple", [1, 1, 1]>}). It sums these counts to produce the final total frequency for that word.
+\section{Conclusion}
+The implementation successfully demonstrates the MapReduce logic. The separation of the \texttt{Map} and \texttt{Reduce} functions allows the code to be easily parallelized in a real distributed environment.
+\end{document}

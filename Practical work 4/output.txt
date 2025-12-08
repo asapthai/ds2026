@@ -1,0 +1,5 @@
+--- Word Count ---
+apple: 3
+banana: 3
+grape: 1
+orange: 2
